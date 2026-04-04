@@ -36,15 +36,21 @@ def get_inventory():
         row = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT gold
+                SELECT gold, red_ml, green_ml, blue_ml, red_potions, green_potions, blue_potions
                 FROM global_inventory
                 """
             )
         ).one()
 
-        gold = row.gold
+    number_of_potions = (row.red_potions + row.green_potions + row.blue_potions)
 
-    return InventoryAudit(number_of_potions=0, ml_in_barrels=0, gold=gold)
+    ml_in_barrels = row.red_ml + row.green_ml + row.blue_ml
+
+    return InventoryAudit(
+        number_of_potions=number_of_potions,
+        ml_in_barrels=ml_in_barrels,
+        gold=row.gold,
+    )
 
 
 @router.post("/plan", response_model=CapacityPlan)
@@ -68,4 +74,3 @@ def deliver_capacity_plan(capacity_purchase: CapacityPlan, order_id: int):
     - Each additional capacity unit costs 1000 gold.
     """
     print(f"capacity delivered: {capacity_purchase} order_id: {order_id}")
-    pass
