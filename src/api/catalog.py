@@ -20,6 +20,7 @@ class CatalogItem(BaseModel):
 
 
 # Placeholder function, you will replace this with a database call
+'''
 def create_catalog(red_potions: int, green_potions: int, blue_potions: int,) -> List[CatalogItem]:
     catalog = []
 
@@ -57,6 +58,7 @@ def create_catalog(red_potions: int, green_potions: int, blue_potions: int,) -> 
         )
 
     return catalog
+'''
 
 
 @router.get("/catalog/", tags=["catalog"], response_model=List[CatalogItem])
@@ -65,19 +67,26 @@ def get_catalog() -> List[CatalogItem]:
     Retrieves the catalog of items. Each unique item combination should have only a single price.
     You can have at most 6 potion SKUs offered in your catalog at one time.
     """
-
     with db.engine.begin() as connection:
-        row = connection.execute(
+        potions = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT red_potions, green_potions, blue_potions
-                FROM global_inventory
+                SELECT sku, name, inventory, red, green, blue, dark, price
+                FROM potions
+                WHERE inventory > 0
                 """
             )
-        ).one()
+        ).fetchall()
 
-    return create_catalog(
-        red_potions=row.red_potions,
-        green_potions=row.green_potions,
-        blue_potions=row.blue_potions,
-    )
+    catalog = []
+    for potion in potions:
+        catalog.append(
+            CatalogItem(
+                sku=potion.sku,
+                name=potion.name,
+                quantity=potion.inventory,
+                price=potion.price,
+                potion_type=[potion.red, potion.green, potion.blue, potion.dark]
+            )
+        )
+    return catalog

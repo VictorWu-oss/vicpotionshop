@@ -49,12 +49,9 @@ def search_orders(
 ):
     """
     Search for cart line items by customer name and/or potion sku.
+    Placeholder Scaramouche below
     """
-    return SearchResponse(
-        previous=None,
-        next=None,
-        results=[
-            LineItem(
+    return SearchResponse(previous=None, next=None,results=[LineItem(
                 line_item_id=1,
                 item_sku="1 oblivion potion",
                 customer_name="Scaramouche",
@@ -63,11 +60,11 @@ def search_orders(
             )
         ],
     )
-
-
+'''
+No longer needed hardcode
 cart_id_counter = 1
 carts: dict[int, dict[str, int]] = {}
-
+'''
 
 class Customer(BaseModel):
     customer_id: str
@@ -82,7 +79,7 @@ def post_visits(visit_id: int, customers: List[Customer]):
     """
     Shares the customers that visited the store on that tick.
     """
-    print(customers)
+    print(customers, visit_id)
     pass
 
 
@@ -90,15 +87,33 @@ class CartCreateResponse(BaseModel):
     cart_id: int
 
 
+# Update this to be no longer hardcoded
+# Inserts carts TABLE and returns the database-generated id instead of in memory counter
 @router.post("/", response_model=CartCreateResponse)
 def create_cart(new_cart: Customer):
     """
     Creates a new cart for a specific customer.
     """
-    global cart_id_counter
-    cart_id = cart_id_counter
-    cart_id_counter += 1
-    carts[cart_id] = {}
+    with (db.engine.begin() as connection):
+        # Insert new row into carts table and return the new cart's id
+        result = connection.execute(
+            sqlalchemy.text(
+                """
+                INSERT INTO carts (customer_id, customer_name, customer_class)
+                VALUES (:customer_id, :customer_name, :customer_class)
+                RETURNING id
+                """
+            ),
+            {
+                "customer_id" : new_cart.customer_id,
+                "customer_name" : new_cart.customer_name,
+                "customer_class" : new_cart.character_class,
+            }
+        )
+        cart_id = result.scalar_one()
+
+        # Returning id gives us back the new cart's id from the result
+
     return CartCreateResponse(cart_id=cart_id)
 
 
@@ -106,16 +121,62 @@ class CartItem(BaseModel):
     quantity: int = Field(ge=1, description="Quantity must be at least 1")
 
 
+# Looks up the cart and potion in 'carts' and 'potions' database. Then inserts into cart_items instead of storing into dict
 @router.post("/{cart_id}/items/{item_sku}", status_code=status.HTTP_204_NO_CONTENT)
 def set_item_quantity(cart_id: int, item_sku: str, cart_item: CartItem):
-    print(
-        f"cart_id: {cart_id}, item_sku: {item_sku}, cart_item: {cart_item}, carts: {carts}"
-    )
-    if cart_id not in carts:
-        raise HTTPException(status_code=404, detail="Cart not found")
+    with db.engine.begin() as connection:
+        # Check if cart exists
+        cart = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT id 
+                FROM carts
+                WHERE id = :cart_id
+                """
+            ),
+            {
+                "cart_id" : cart_id
+            }
+        ).one_or_none()
 
-    carts[cart_id][item_sku] = cart_item.quantity
-    return status.HTTP_204_NO_CONTENT
+        if cart is None:
+            raise HTTPException(status_code=404, detail="Cart not found")
+
+        # Find potion via SKU which is the name used for API calls
+        potion = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT id
+                FROM potions
+                WHERE sku = :sku
+                """
+            ),
+            {
+                "sku" : item_sku
+            }
+        ).one_or_none()
+
+        # Check if potion exists
+        if potion is None:
+            raise HTTPException(status_code=404, detail="Potion not found")
+
+        # Add item to the cart
+        connection.execute(
+            sqlalchemy.text(
+                """
+                INSERT INTO cart_items (cart_id, potion_id, quantity)
+                VALUES (:cart_id, :potion_id, :quantity)
+                """
+            ),
+            {"cart_id": cart_id, "potion_id": potion.id, "quantity": cart_item.quantity}
+        )
+
+    # No longer using dictionary below
+    #print(
+    #    f"cart_id: {cart_id}, item_sku: {item_sku}, cart_item: {cart_item}, carts: {carts}"
+    #)
+    #carts[cart_id][item_sku] = cart_item.quantity
+    #return status.HTTP_204_NO_CONTENT
 
 
 class CheckoutResponse(BaseModel):
@@ -126,16 +187,86 @@ class CheckoutResponse(BaseModel):
 class CartCheckout(BaseModel):
     payment: str
 
-
+# JOIN cart_items with potions to receive what was ordered. Update potions.inventory for each tem and adds gold to global_inventory
 @router.post("/{cart_id}/checkout", response_model=CheckoutResponse)
 def checkout(cart_id: int, cart_checkout: CartCheckout):
     """
     Handles the checkout process for a specific cart.
     """
+    with db.engine.begin() as connection:
+        cart = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT id
+                FROM carts
+                WHERE id = :cart_id
+                """
+            ),
+            {
+                "cart_id": cart_id
+            }
+        ).one_or_none()
 
-    if cart_id not in carts:
-        raise HTTPException(status_code=404, detail="Cart not found")
+        # Check if cart exists
+        if cart is None:
+            raise HTTPException(status_code=404, detail="Cart not found")
 
+        # Get all items in the cart with potion details
+        # Joins cart_items and potions so we get price and inventory too
+        items = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT p.sku, p.price, p.inventory, ci.quantity, p.id as potion_id
+                FROM cart_items ci
+                JOIN potions p ON ci.potion_id = p.id
+                WHERE ci.cart_id = :cart_id
+                """
+            ),
+            {
+                "cart_id": cart_id
+            }
+        ).fetchall()
+
+        total_potions_bought = 0
+        total_gold_paid = 0
+
+        for item in items:
+            # Check if enough in stock to be sold
+            if item.inventory < item.quantity:
+                raise HTTPException(status_code=404, detail=f"Not enough {item.sku} in inventory")
+
+            # Subtract sold potions from inventory
+            connection.execute(
+                sqlalchemy.text(
+                    """
+                    UPDATE potions
+                    SET inventory = inventory - :quantity
+                    WHERE id = :potion_id
+                    """
+                ),
+                {
+                    "quantity": item.quantity, "potion_id": item.potion_id
+                }
+            )
+
+            total_potions_bought += item.quantity
+            total_gold_paid += item.price * item.quantity
+
+        # Add gold earned to the shop
+        connection.execute(
+            sqlalchemy.text(
+                """
+                UPDATE global_inventory
+                SET gold = gold + :gold_added
+                """
+            ),
+            {
+                "gold_added": total_gold_paid
+            }
+        )
+
+    '''
+    HARDCODE BELOW
     red_bought = 0
     green_bought = 0
     blue_bought = 0
@@ -186,10 +317,11 @@ def checkout(cart_id: int, cart_checkout: CartCheckout):
                 "blue_bought": blue_bought,
             },
         )
+    '''
     # TODO: Deduct the right potions from inventory to the shop
 
     # Delete cart after checkout
-    del carts[cart_id]
+    #del carts[cart_id]
 
     return CheckoutResponse(
         total_potions_bought=total_potions_bought,

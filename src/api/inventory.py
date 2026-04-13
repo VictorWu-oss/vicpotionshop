@@ -36,19 +36,24 @@ def get_inventory():
         row = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT gold, red_ml, green_ml, blue_ml, red_potions, green_potions, blue_potions
+                SELECT gold, red_ml, green_ml, blue_ml
                 FROM global_inventory
                 """
             )
         ).one()
 
-    number_of_potions = (row.red_potions + row.green_potions + row.blue_potions)
-
-    ml_in_barrels = row.red_ml + row.green_ml + row.blue_ml
+        number_of_potions = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT SUM(inventory) as total
+                FROM potions
+                """
+            )
+        ).one()
 
     return InventoryAudit(
-        number_of_potions=number_of_potions,
-        ml_in_barrels=ml_in_barrels,
+        number_of_potions=number_of_potions.total or 0,
+        ml_in_barrels=row.red_ml + row.green_ml + row.blue_ml,
         gold=row.gold,
     )
 
