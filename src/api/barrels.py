@@ -97,7 +97,7 @@ def post_deliver_barrels(barrels_delivered: List[Barrel], order_id: int):
 def create_barrel_plan(
     gold: int,
     total_potions: int,
-        total_ml,
+    total_ml: int,
     wholesale_catalog: List[Barrel],
 ) -> List[BarrelOrder]:
 
@@ -138,7 +138,7 @@ def get_wholesale_purchase_plan(wholesale_catalog: List[Barrel]):
         row = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT gold
+                SELECT gold, red_ml, green_ml, blue_ml, dark_ml
                 FROM global_inventory
                 """
             )
@@ -154,5 +154,6 @@ def get_wholesale_purchase_plan(wholesale_catalog: List[Barrel]):
     return create_barrel_plan(
         gold=row.gold,
         total_potions=total_potions.total or 0,
+        total_ml = row.red_ml + row.green_ml + row.blue_ml + row.dark_ml,
         wholesale_catalog=wholesale_catalog,
     )
