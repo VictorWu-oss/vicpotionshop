@@ -97,16 +97,30 @@ def post_deliver_barrels(barrels_delivered: List[Barrel], order_id: int):
 def create_barrel_plan(
     gold: int,
     total_potions: int,
+        total_ml,
     wholesale_catalog: List[Barrel],
 ) -> List[BarrelOrder]:
 
-    # Plan: Buy 1 of each color barrel we can afford if we have <10 total potions
+    # Plan:
+    # If I already have 15 potions, don't buy more barrels
+    # Per barrel:
+    #   If my total_ml would exceed 10000 by purchasing another barrel dont buy, if not continue
+    #   Audit says: Cannot have more than 10000 ml in inventory. With current barrel request would have 17500 ml.
+    #
+    #   If I can afford it, then do so
+
+    if total_potions >= 15:
+        return []
+
     plan = []
-    if total_potions < 10:
-        for barrel in wholesale_catalog:
-            if barrel.price <= gold:
-                plan.append(BarrelOrder(sku=barrel.sku, quantity=1))
-                gold -= barrel.price
+    for barrel in wholesale_catalog:
+        if total_ml + barrel.ml_per_barrel > 10000:
+            continue
+        # If barrel's price is less than the gold
+        if barrel.price <= gold:
+            plan.append(BarrelOrder(sku=barrel.sku, quantity=1))
+            gold -= barrel.price
+            total_ml += barrel.ml_per_barrel
 
     return plan
 
