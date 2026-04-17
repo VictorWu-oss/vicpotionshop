@@ -19,12 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
-        DELETE FROM potions
-        WHERE sku IN ('RED_POTIONS', 'GREEN_POTIONS', 'BLUE_POTIONS')
-        """
-    )
+    pass
 
 
 def downgrade() -> None:

@@ -136,11 +136,14 @@ def get_bottle_plan():
             )
         ).one()
 
+        # Prioritize making mixed potions over pure potions
+        # Put mixed potions (with more than 1 color) to the top
         potions = connection.execute(
             sqlalchemy.text(
                 """
                 SELECT red, green, blue, dark
                 FROM potions
+                ORDER BY (CASE WHEN (red>0)::int + (green>0)::int + (blue>0)::int + (dark>0)::int > 1 THEN 0 ELSE 1 END)
                 """
             )
         ).fetchall()
