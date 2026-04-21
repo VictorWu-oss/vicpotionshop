@@ -164,6 +164,12 @@ def get_bottle_plan():
         )
         quantity = int(quantity)
 
+        # Cap quantity so the total plan doesn't exceed 50
+        remainder = 50 - sum(x.quantity for x in plan)
+        if remainder <= 0:
+            break
+        quantity = min(quantity, remainder)
+
         if quantity > 0:
             plan.append(PotionMixes(potion_type=[r,g,b,d], quantity=quantity))
             red_ml -= r * quantity
@@ -171,7 +177,6 @@ def get_bottle_plan():
             blue_ml -= b * quantity
             dark_ml -= d * quantity
 
-        if sum(x.quantity for x in plan) >= 50: break
 
     return plan
 
