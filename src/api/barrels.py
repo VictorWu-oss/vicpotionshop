@@ -81,17 +81,71 @@ def post_deliver_barrels(barrels_delivered: List[Barrel], order_id: int):
 
     # Subtracts gold, adds ml to correct color when barrels are delivered.
     with db.engine.begin() as connection:
-        connection.execute(
-            sqlalchemy.text(
+        # Check in processed requests to see if order_id already exists, if it does don't do it: uniqueness constraint violation
+        existing = connection.execute(
+            sqlalchemy.text
+            (
                 """
-                UPDATE global_inventory 
-                SET gold = gold - :gold_paid, red_ml = red_ml + :red_ml_added, green_ml = green_ml + :green_ml_added, blue_ml = blue_ml + :blue_ml_added, dark_ml = dark_ml + :dark_ml_added
+                SELECT order_id 
+                FROM processed_requests 
+                WHERE order_id = :order_id
                 """
             ),
             {
-                "gold_paid": delivery.gold_paid, "red_ml_added": delivery.red_ml_added,
-                "green_ml_added": delivery.green_ml_added, "blue_ml_added": delivery.blue_ml_added, "dark_ml_added": delivery.dark_ml_added
-            },
+                "order_id": order_id
+            }
+        ).one_or_none()
+
+        # I think don't try to return an error or else I will get null barrels, don't want that
+        if existing: return
+
+        # Insert into transaction
+        transaction = connection.execute(
+            sqlalchemy.text
+            (
+                """
+                INSERT INTO account_transactions (description)
+                VALUES(:description)
+                RETURNING id 
+                """
+            ),
+            {
+                "description": "Barrel delivery"
+            }
+        ).scalar_one()
+
+        # Insert into account_ledger_entries
+        connection.execute(
+            sqlalchemy.text
+            (
+                """
+                INSERT INTO account_ledger_entries (account_transaction_id, gold, red_ml, blue_ml, green_ml, dark_ml)
+                VALUES(:transaction_id, :gold_paid, :red_ml_added, :blue_ml_added, :green_ml_added, :dark_ml_added)
+                """
+            ),
+            {
+                "transaction_id": transaction,
+                "gold_paid": -delivery.gold_paid,
+                "red_ml_added": delivery.red_ml_added,
+                "green_ml_added": delivery.green_ml_added,
+                "blue_ml_added": delivery.blue_ml_added,
+                "dark_ml_added": delivery.dark_ml_added
+            }
+        )
+
+        # Insert into processed requests
+        connection.execute(
+            sqlalchemy.text
+                (
+                """
+                INSERT INTO processed_requests (order_id, response)
+                VALUES(:order_id, :response)
+                """
+            ),
+            {
+                "order_id": order_id,
+                "response": "processed"
+            }
         )
 
 def create_barrel_plan(
@@ -134,12 +188,14 @@ def get_wholesale_purchase_plan(wholesale_catalog: List[Barrel]):
     """
     print(f"barrel catalog: {wholesale_catalog}")
 
+
     with db.engine.begin() as connection:
-        row = connection.execute(
+        # REFER TO THE ACCOUNTS LEDGER FOR INFORMATION
+        ledger = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT gold, red_ml, green_ml, blue_ml, dark_ml
-                FROM global_inventory
+                SELECT SUM(gold) as gold, SUM(red_ml) as red_ml, SUM(green_ml) as green_ml, SUM(blue_ml) as blue_ml, SUM(dark_ml) as dark_ml
+                FROM account_ledger_entries
                 """
             )
         ).one()
@@ -148,12 +204,12 @@ def get_wholesale_purchase_plan(wholesale_catalog: List[Barrel]):
         # Fill in values correctly based on what is in your database
         total_potions = connection.execute(
             sqlalchemy.text(
-                "SELECT SUM(inventory) as total FROM potions")
+                "SELECT SUM(inventory) as total FROM account_ledger_entries")
         ).one()
 
     return create_barrel_plan(
-        gold=row.gold,
+        gold=ledger.gold,
         total_potions=total_potions.total or 0,
-        total_ml = row.red_ml + row.green_ml + row.blue_ml + row.dark_ml,
+        total_ml = (ledger.red_ml or 0) + (ledger.green_ml or 0) + (ledger.blue_ml or 0) + (ledger.dark_ml or 0),
         wholesale_catalog=wholesale_catalog,
     )

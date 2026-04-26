@@ -32,12 +32,13 @@ def get_inventory():
     as errors on potion exchange.
     """
 
+    # NOW GET GOLD, ML, AND POTIONS VIA SUMMING LEDGER ENTRIES
     with db.engine.begin() as connection:
-        row = connection.execute(
+        ledger = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT gold, red_ml, green_ml, blue_ml, dark_ml
-                FROM global_inventory
+                SELECT SUM(gold) as gold, SUM(red_ml) as red_ml, SUM(green_ml) as green_ml, SUM(blue_ml) as blue_ml, SUM(dark_ml) as dark_ml
+                FROM account_ledger_entries
                 """
             )
         ).one()
@@ -45,17 +46,15 @@ def get_inventory():
         number_of_potions = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT SUM(inventory) as total
-                FROM potions
+                SELECT SUM(potion_change) as total
+                FROM account_ledger_entries
                 """
             )
         ).one()
 
     return InventoryAudit(
         number_of_potions=number_of_potions.total or 0,
-        ml_in_barrels=row.red_ml + row.green_ml + row.blue_ml + row.dark_ml,
-        gold=row.gold,
-    )
+        ml_in_barrels=(ledger.red_ml or 0) + (ledger.green_ml or 0) + (ledger.blue_ml or 0) + (ledger.dark_ml or 0), gold=ledger.gold or 0,)
 
 
 @router.post("/plan", response_model=CapacityPlan)

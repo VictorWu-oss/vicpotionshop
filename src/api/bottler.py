@@ -45,79 +45,89 @@ def post_deliver_bottles(potions_delivered: List[PotionMixes], order_id: int):
     # TODO: Subtract ml based on how much delivered potions used.
 
     with db.engine.begin() as connection:
+        # Check in processed requests to see if order_id already exists, if it does don't do it: uniqueness constraint violation
+        existing = connection.execute(
+            sqlalchemy.text
+                (
+                """
+                SELECT order_id 
+                FROM processed_requests 
+                WHERE order_id = :order_id
+                """
+            ),
+            {
+                "order_id": order_id
+            }
+        ).one_or_none()
+
+        # I think don't try to return an error or else I will get null potions, don't want that
+        if existing: return
+
+        # Insert into transaction
+        transaction = connection.execute(
+            sqlalchemy.text
+                (
+                """
+                INSERT INTO account_transactions (description)
+                VALUES(:description)
+                RETURNING id 
+                """
+            ),
+            {
+                "description": "Potion delivery"
+            }
+        ).scalar_one()
+
         for potion in potions_delivered:
             r, g, b, d = potion.potion_type
-            #ml_used = potion.quantity * 100  # 100 ml per potion
 
-            connection.execute(
+            potionExe = connection.execute(
                 sqlalchemy.text(
                     """
-                    UPDATE global_inventory
-                    SET red_ml = red_ml - :red_ml_used, 
-                        green_ml = green_ml - :green_ml_used, 
-                        blue_ml = blue_ml - :blue_ml_used,
-                        dark_ml = dark_ml - :dark_ml_used
+                    SELECT id
+                    FROM potions
+                    WHERE red =:r AND green =:g AND blue = :b AND dark = :d
                     """
                 ),
                 {
-                    "red_ml_used": r * potion.quantity,
-                    "green_ml_used": g * potion.quantity,
-                    "blue_ml_used": b * potion.quantity,
-                    "dark_ml_used": d * potion.quantity,
+                    "r": r, "g": g, "b": b, "d": d
+                }
+            ).scalar_one()
+
+            # Insert into account_ledger_entries
+            connection.execute(
+                sqlalchemy.text
+                    (
+                    """
+                    INSERT INTO account_ledger_entries (account_transaction_id, potion_id, red_ml, green_ml, blue_ml, dark_ml, potion_change)
+                    VALUES(:transaction_id, :potion_id, :red_ml, :green_ml, :blue_ml, :dark_ml, :potion_change)
+                    """
+                ),
+                {
+                    "transaction_id": transaction,
+                    "potion_id": potionExe,
+                    "red_ml": -(r * potion.quantity),
+                    "green_ml": -(g * potion.quantity),
+                    "blue_ml": -(b * potion.quantity),
+                    "dark_ml": -(d * potion.quantity),
+                    "potion_change": potion.quantity
                 }
             )
 
-            connection.execute(
-                sqlalchemy.text(
-                    """
-                    UPDATE potions
-                    SET inventory = inventory + :quantity
-                    WHERE red = :r AND green = :g AND blue = :b AND dark = :d
-                    """
-                ),
-                {"quantity": potion.quantity, "r": r, "g": g, "b": b, "d": d}
-            )
-
-'''
-No longer needed 
-
-def create_bottle_plan(
-    red_ml: int,
-    green_ml: int,
-    blue_ml: int,
-) -> List[PotionMixes]:
-    plan = []
-
-    #TODO: Create a real bottle plan logic
-    red_potions_tomake = red_ml // 100
-    green_potions_tomake = green_ml // 100
-    blue_potions_tomake = blue_ml // 100
-
-    if red_potions_tomake > 0:
-        plan.append(
-            PotionMixes(
-                potion_type = [100, 0, 0, 0],
-                quantity=red_potions_tomake,
-            )
+        # Insert into processed requests
+        connection.execute(
+            sqlalchemy.text
+                (
+                """
+                INSERT INTO processed_requests (order_id, response)
+                VALUES(:order_id, :response)
+                """
+            ),
+            {
+                "order_id": order_id,
+                "response": "processed"
+            }
         )
-
-    if green_potions_tomake > 0:
-        plan.append(
-            PotionMixes(
-                potion_type=[0, 100, 0, 0],
-                quantity=green_potions_tomake,
-            )
-        )
-
-    if blue_potions_tomake > 0:
-        plan.append(
-            PotionMixes(
-                potion_type = [0, 0, 100, 0],
-                quantity=blue_potions_tomake,
-            )
-        )
-    return plan
-'''
 
 @router.post("/plan", response_model=List[PotionMixes])
 def get_bottle_plan():
@@ -130,8 +140,8 @@ def get_bottle_plan():
         inventory = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT red_ml, green_ml, blue_ml, dark_ml
-                FROM global_inventory
+                SELECT SUM(red_ml) as red_ml, SUM(green_ml) as green_ml, SUM(blue_ml) as blue_ml, SUM(dark_ml) as dark_ml
+                FROM account_ledger_entries
                 """
             )
         ).one()
@@ -149,10 +159,10 @@ def get_bottle_plan():
         ).fetchall()
 
     plan = []
-    red_ml = inventory.red_ml
-    green_ml = inventory.green_ml
-    blue_ml = inventory.blue_ml
-    dark_ml = inventory.dark_ml
+    red_ml = inventory.red_ml or 0
+    green_ml = inventory.green_ml or 0
+    blue_ml = inventory.blue_ml or 0
+    dark_ml = inventory.dark_ml or 0
 
     for potion in potions:
         r, g, b, d = potion.red, potion.green, potion.blue, potion.dark

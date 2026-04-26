@@ -18,33 +18,35 @@ def reset():
     """
     # TODO: Implement database write logic here
     with db.engine.begin() as connection:
-        connection.execute(
-            sqlalchemy.text(
-                """
-                UPDATE global_inventory SET gold = 100, red_ml = 0, green_ml = 0, blue_ml = 0
-                """
-            )
-        )
+        # Since rows are not removed after admin reset implement
+        connection.execute(sqlalchemy.text("DELETE FROM cart_items"))
+        connection.execute(sqlalchemy.text("DELETE FROM carts"))
 
+        connection.execute(sqlalchemy.text("DELETE FROM account_ledger_entries"))
+        connection.execute(sqlalchemy.text("DELETE FROM account_transactions"))
+
+        connection.execute(sqlalchemy.text("DELETE FROM processed_requests"))
+
+        transaction_id = connection.execute(
+            sqlalchemy.text(
+                """
+                INSERT INTO account_transactions (description)
+                VALUES('Reset')
+                RETURNING id 
+                """
+            )
+        ).scalar_one()
+
+        # Defaults the MLS to 0 so fine
         connection.execute(
             sqlalchemy.text(
                 """
-                UPDATE potions SET inventory = 0
+                INSERT INTO account_ledger_entries (account_transaction_id, gold)
+                VALUES (:transaction_id, 100)
                 """
-            )
-        )
-        connection.execute(
-            sqlalchemy.text(
-                """
-                DELETE FROM cart_items
-                """
-            )
-        )
-        connection.execute(
-            sqlalchemy.text(
-                """
-                DELETE FROM carts
-                """
-            )
+            ),
+            {
+                "transaction_id": transaction_id
+            }
         )
 

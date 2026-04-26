@@ -194,6 +194,24 @@ def checkout(cart_id: int, cart_checkout: CartCheckout):
     Handles the checkout process for a specific cart.
     """
     with db.engine.begin() as connection:
+        # Check in processed requests to see if order_id already exists, if it does don't do it: uniqueness constraint violation
+        existing = connection.execute(
+            sqlalchemy.text
+                (
+                """
+                SELECT order_id 
+                FROM processed_requests 
+                WHERE order_id = :order_id
+                """
+            ),
+            {
+                "order_id": cart_id
+            }
+        ).one_or_none()
+
+        # I think don't try to return an error or else I will get null barrels, don't want that
+        if existing: return CheckoutResponse(total_potions_bought=0,total_gold_paid=0)
+
         cart = connection.execute(
             sqlalchemy.text(
                 """
@@ -227,103 +245,66 @@ def checkout(cart_id: int, cart_checkout: CartCheckout):
             }
         ).fetchall()
 
-        total_potions_bought = 0
-        total_gold_paid = 0
+        # Insert into transaction
+        transaction = connection.execute(
+            sqlalchemy.text
+                (
+                """
+                INSERT INTO account_transactions (description)
+                VALUES(:description)
+                RETURNING id 
+                """
+            ),
+            {
+                "description": "Cart: Potions sold"
+            }
+        ).scalar_one()
 
+        total_potions_bought = 0
+        total_gold_added = 0
+
+        # Check global inventory that counts from ledger for the total number of potions in inventory
         for item in items:
             # Check if enough in stock to be sold
             if item.inventory < item.quantity:
                 raise HTTPException(status_code=404, detail=f"Not enough {item.sku} in inventory")
 
-            # Subtract sold potions from inventory
+            total_potions_bought += item.quantity
+            total_gold_added += item.price * item.quantity
+
+            # Insert into account_ledger_entries
             connection.execute(
-                sqlalchemy.text(
+                sqlalchemy.text
+                    (
                     """
-                    UPDATE potions
-                    SET inventory = inventory - :quantity
-                    WHERE id = :potion_id
+                    INSERT INTO account_ledger_entries (account_transaction_id, gold, potion_id, potion_change)
+                    VALUES(:transaction_id, :gold_added, :potion_id, :potion_change)
                     """
                 ),
                 {
-                    "quantity": item.quantity, "potion_id": item.potion_id
+                    "transaction_id": transaction,
+                    "gold_added": +item.price * item.quantity,
+                    "potion_id": item.potion_id,
+                    "potion_change": -item.quantity
                 }
             )
 
-            total_potions_bought += item.quantity
-            total_gold_paid += item.price * item.quantity
-
-        # Add gold earned to the shop
+        # Insert into processed requests
         connection.execute(
-            sqlalchemy.text(
+            sqlalchemy.text
+                (
                 """
-                UPDATE global_inventory
-                SET gold = gold + :gold_added
+                INSERT INTO processed_requests (order_id, response)
+                VALUES(:order_id, :response)
                 """
             ),
             {
-                "gold_added": total_gold_paid
+                "order_id": cart_id,
+                "response": "processed"
             }
         )
 
-    '''
-    HARDCODE BELOW
-    red_bought = 0
-    green_bought = 0
-    blue_bought = 0
-
-    for item_sku, quantity in carts[cart_id].items():
-        if item_sku == "RED_POTION":
-            red_bought += quantity
-        elif item_sku == "GREEN_POTION":
-            green_bought += quantity
-        elif item_sku == "BLUE_POTION":
-            blue_bought += quantity
-
-    total_potions_bought = red_bought + green_bought + blue_bought
-    total_gold_paid = total_potions_bought * 50
-
-    with db.engine.begin() as connection:
-        row = connection.execute(
-            sqlalchemy.text(
-                """
-                SELECT gold, red_potions, green_potions, blue_potions
-                FROM global_inventory
-                """
-            )
-        ).one()
-
-        # checks if you have enough in stock
-        if row.red_potions < red_bought:
-            raise HTTPException(status_code=400, detail ="Not Enough Red Potions in inventory")
-        elif row.green_potions < green_bought:
-            raise HTTPException(status_code=400, detail ="Not Enough Green Potions in inventory")
-        elif row.blue_potions < blue_bought:
-            raise HTTPException(status_code=400, detail ="Not Enough Blue Potions in inventory")
-
-        # Subtract the sold potions and adds gold
-        connection.execute(
-            sqlalchemy.text(
-                """
-                UPDATE global_inventory 
-                
-                SET gold = gold + :gold_added, red_potions = red_potions - :red_bought, green_potions = green_potions - :green_bought, blue_potions = blue_potions - :blue_bought
-                """
-            ),
-            {
-                #
-                "gold_added": total_gold_paid,
-                "red_bought": red_bought,
-                "green_bought": green_bought,
-                "blue_bought": blue_bought,
-            },
-        )
-    '''
-    # TODO: Deduct the right potions from inventory to the shop
-
-    # Delete cart after checkout
-    #del carts[cart_id]
-
     return CheckoutResponse(
         total_potions_bought=total_potions_bought,
-        total_gold_paid=total_gold_paid
+        total_gold_paid=total_gold_added
     )

@@ -19,48 +19,6 @@ class CatalogItem(BaseModel):
     )
 
 
-# Placeholder function, you will replace this with a database call
-'''
-def create_catalog(red_potions: int, green_potions: int, blue_potions: int,) -> List[CatalogItem]:
-    catalog = []
-
-    if red_potions > 0:
-        catalog.append(
-            CatalogItem(
-                sku = "RED_POTION",
-                name = "red potion",
-                quantity = red_potions,
-                price = 50,
-                potion_type=[100, 0, 0, 0]
-            )
-        )
-
-    if green_potions > 0:
-        catalog.append(
-            CatalogItem(
-                sku = "GREEN_POTION",
-                name = "green potion",
-                quantity = green_potions,
-                price = 50,
-                potion_type=[0, 100, 0, 0]
-            )
-        )
-
-    if blue_potions > 0:
-        catalog.append(
-            CatalogItem(
-                sku = "BLUE_POTION",
-                name = "blue potion",
-                quantity = blue_potions,
-                price = 50,
-                potion_type=[0, 0, 100, 0]
-            )
-        )
-
-    return catalog
-'''
-
-
 @router.get("/catalog/", tags=["catalog"], response_model=List[CatalogItem])
 def get_catalog() -> List[CatalogItem]:
     """
@@ -69,11 +27,17 @@ def get_catalog() -> List[CatalogItem]:
     """
     with db.engine.begin() as connection:
         potions = connection.execute(
+            # LEFT join with ledger, connects potion to ledger entries
+            # SUM potion_change to get curr inventory.
+            # GROUP BY sorts the final output
+            # HAVING used over WHERE bc there's aggregate functions. It also works only as a post-aggregate-op clause.
             sqlalchemy.text(
                 """
                 SELECT sku, name, inventory, red, green, blue, dark, price
-                FROM potions
-                WHERE inventory > 0
+                FROM potions 
+                LEFT JOIN account_ledger_entries ON account_ledger_entries.potion_id = potions.id
+                GROUP BY potions.id, potions.sku, potions.name, potions.red, potions.green, potions.blue, potions.dark, potions.price
+                HAVING SUM(account_ledger_entries.potion_change) > 0
                 """
             )
         ).fetchall()
