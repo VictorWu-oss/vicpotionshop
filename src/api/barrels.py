@@ -204,11 +204,11 @@ def get_wholesale_purchase_plan(wholesale_catalog: List[Barrel]):
         # Fill in values correctly based on what is in your database
         total_potions = connection.execute(
             sqlalchemy.text(
-                "SELECT SUM(inventory) as total FROM account_ledger_entries")
+                "SELECT SUM(potion_change) as total FROM account_ledger_entries")
         ).one()
 
     return create_barrel_plan(
-        gold=ledger.gold,
+        gold=ledger.gold or 0,
         total_potions=total_potions.total or 0,
         total_ml = (ledger.red_ml or 0) + (ledger.green_ml or 0) + (ledger.blue_ml or 0) + (ledger.dark_ml or 0),
         wholesale_catalog=wholesale_catalog,
