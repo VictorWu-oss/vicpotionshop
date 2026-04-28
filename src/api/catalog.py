@@ -31,13 +31,14 @@ def get_catalog() -> List[CatalogItem]:
             # SUM potion_change to get curr inventory.
             # GROUP BY sorts the final output
             # HAVING used over WHERE bc there's aggregate functions. It also works only as a post-aggregate-op clause.
+            # COALESCE so I dont get nulls instead 0.
             sqlalchemy.text(
                 """
-                SELECT sku, name, inventory, red, green, blue, dark, price
-                FROM potions 
-                LEFT JOIN account_ledger_entries ON account_ledger_entries.potion_id = potions.id
-                GROUP BY potions.id, potions.sku, potions.name, potions.red, potions.green, potions.blue, potions.dark, potions.price
-                HAVING SUM(account_ledger_entries.potion_change) > 0
+                SELECT p.sku, p.name, p.red, p.green, p.blue, p.dark, p.price, COALESCE(SUM(ale.potion_change), 0) as inventory
+                FROM potions p
+                LEFT JOIN account_ledger_entries ale ON ale.potion_id = p.id
+                GROUP BY p.id, p.sku, p.name, p.red, p.green, p.blue, p.dark, p.price
+                HAVING COALESCE(SUM(ale.potion_change), 0) > 0
                 """
             )
         ).fetchall()
