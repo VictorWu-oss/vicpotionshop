@@ -234,10 +234,13 @@ def checkout(cart_id: int, cart_checkout: CartCheckout):
         items = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT p.sku, p.price, p.inventory, ci.quantity, p.id as potion_id
+                SELECT potions.sku, potions.price, potions.id as potion_id, ci.quantity,
+                COALESCE(SUM(ale.potion_change), 0) as inventory
                 FROM cart_items ci
-                JOIN potions p ON ci.potion_id = p.id
+                JOIN potions ON ci.potion_id = potions.id
+                LEFT JOIN account_ledger_entries ale ON ale.potion_id = potions.id
                 WHERE ci.cart_id = :cart_id
+                GROUP BY potions.sku, potions.price, potions.id, ci.quantity
                 """
             ),
             {
