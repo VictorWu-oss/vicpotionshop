@@ -213,6 +213,27 @@ def get_wholesale_purchase_plan(wholesale_catalog: List[Barrel]):
                 "SELECT SUM(potion_change) as total FROM account_ledger_entries")
         ).one()
 
+        # Log barrel offers for tracking
+        for barrel in wholesale_catalog:
+            connection.execute(
+                sqlalchemy.text(
+                    """
+                    INSERT INTO barrel_offers (sku, ml_per_barrel, price, quantity, red, green, blue, dark)
+                    VALUES (:sku, :ml_per_barrel, :price, :quantity, :red, :green, :blue, :dark)
+                    """
+                ),
+                {
+                    "sku": barrel.sku,
+                    "ml_per_barrel": barrel.ml_per_barrel,
+                    "price": barrel.price,
+                    "quantity": barrel.quantity,
+                    "red": barrel.potion_type[0],
+                    "green": barrel.potion_type[1],
+                    "blue": barrel.potion_type[2],
+                    "dark": barrel.potion_type[3],
+                }
+            )
+
     return create_barrel_plan(
         gold=ledger.gold or 0,
         total_ml = (ledger.red_ml or 0) + (ledger.green_ml or 0) + (ledger.blue_ml or 0) + (ledger.dark_ml or 0),
