@@ -20,18 +20,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.create_table(
-        "barrel_offers",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("sku", sa.String(), nullable=False),
-        sa.Column("ml_per_barrel", sa.Integer(), nullable=False),
-        sa.Column("price", sa.Integer(), nullable=False),
-        sa.Column("quantity", sa.Integer(), nullable=False),
-        sa.Column("red", sa.Float(), nullable=False, server_default="0"),
-        sa.Column("green", sa.Float(), nullable=False, server_default="0"),
-        sa.Column("blue", sa.Float(), nullable=False, server_default="0"),
-        sa.Column("dark", sa.Float(), nullable=False, server_default="0"),
-        sa.Column("offered_at", sa.DateTime(), server_default=sa.text("now()")),
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS barrel_offers (
+            id SERIAL PRIMARY KEY,
+            sku VARCHAR NOT NULL,
+            ml_per_barrel INTEGER NOT NULL,
+            price INTEGER NOT NULL,
+            quantity INTEGER NOT NULL,
+            red FLOAT NOT NULL DEFAULT 0,
+            green FLOAT NOT NULL DEFAULT 0,
+            blue FLOAT NOT NULL DEFAULT 0,
+            dark FLOAT NOT NULL DEFAULT 0,
+            offered_at TIMESTAMP DEFAULT now()
+        )
+        """
     )
 
 
