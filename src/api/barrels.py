@@ -215,7 +215,6 @@ def get_wholesale_purchase_plan(wholesale_catalog: List[Barrel]):
 
     return create_barrel_plan(
         gold=ledger.gold or 0,
-        total_potions=total_potions.total or 0,
         total_ml = (ledger.red_ml or 0) + (ledger.green_ml or 0) + (ledger.blue_ml or 0) + (ledger.dark_ml or 0),
         ml_capacity=ml_capacity,
         wholesale_catalog=wholesale_catalog,

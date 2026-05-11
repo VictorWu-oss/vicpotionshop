@@ -100,8 +100,8 @@ def post_deliver_bottles(potions_delivered: List[PotionMixes], order_id: int):
                 sqlalchemy.text
                     (
                     """
-                    INSERT INTO account_ledger_entries (account_transaction_id, potion_id, red_ml, green_ml, blue_ml, dark_ml, sku, potion_change)
-                    VALUES(:transaction_id, :potion_id, :red_ml, :green_ml, :blue_ml, :dark_ml, :sku, :potion_change)
+                    INSERT INTO account_ledger_entries (account_transaction_id, potion_id, red_ml, green_ml, blue_ml, dark_ml, potion_change)
+                    VALUES(:transaction_id, :potion_id, :red_ml, :green_ml, :blue_ml, :dark_ml, :potion_change)
                     """
                 ),
                 {
@@ -111,7 +111,6 @@ def post_deliver_bottles(potions_delivered: List[PotionMixes], order_id: int):
                     "green_ml": -(g * potion.quantity),
                     "blue_ml": -(b * potion.quantity),
                     "dark_ml": -(d * potion.quantity),
-                    "sku": "",
                     "potion_change": potion.quantity
                 }
             )
@@ -139,6 +138,7 @@ def get_bottle_plan():
     Colors are expressed in integers from 0 to 100 that must sum up to exactly 100.
     """
     with db.engine.begin() as connection:
+        # Get the total ml amounts from ledgers
         inventory = connection.execute(
             sqlalchemy.text(
                 """
@@ -148,7 +148,17 @@ def get_bottle_plan():
             )
         ).one()
 
-        # Prioritize making mixed potions over pure potions
+        # Get potion capacity from ledgers
+        potion_capacity = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT 50 + COALESCE(SUM(potion_capacity), 0) as potion_capacity
+                FROM account_ledger_entries
+                """
+            )
+        ).scalar_one()
+
+        # Prioritize making any mixed potions over pure potions
         # Put mixed potions (with more than 1 color) to the top
         potions = connection.execute(
             sqlalchemy.text(
@@ -181,7 +191,8 @@ def get_bottle_plan():
         quantity = int(quantity)
 
         # Cap quantity so the total plan doesn't exceed 50 (constraint)
-        remainder = 50 - sum(x.quantity for x in plan)
+        # CHANGED: no longer hardcoding 50. Option to expand inventory cap
+        remainder = potion_capacity - sum(x.quantity for x in plan)
         if remainder <= 0:
             break
         quantity = min(quantity, remainder)
