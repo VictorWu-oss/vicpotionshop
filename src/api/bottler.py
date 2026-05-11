@@ -95,12 +95,13 @@ def post_deliver_bottles(potions_delivered: List[PotionMixes], order_id: int):
             ).scalar_one()
 
             # Insert into account_ledger_entries
+            # Keep track of ID, potion ID, SKU, and all 3 MLs.
             connection.execute(
                 sqlalchemy.text
                     (
                     """
-                    INSERT INTO account_ledger_entries (account_transaction_id, potion_id, red_ml, green_ml, blue_ml, dark_ml, potion_change)
-                    VALUES(:transaction_id, :potion_id, :red_ml, :green_ml, :blue_ml, :dark_ml, :potion_change)
+                    INSERT INTO account_ledger_entries (account_transaction_id, potion_id, red_ml, green_ml, blue_ml, dark_ml, sku, potion_change)
+                    VALUES(:transaction_id, :potion_id, :red_ml, :green_ml, :blue_ml, :dark_ml, :sku, :potion_change)
                     """
                 ),
                 {
@@ -110,6 +111,7 @@ def post_deliver_bottles(potions_delivered: List[PotionMixes], order_id: int):
                     "green_ml": -(g * potion.quantity),
                     "blue_ml": -(b * potion.quantity),
                     "dark_ml": -(d * potion.quantity),
+                    "sku": "",
                     "potion_change": potion.quantity
                 }
             )
@@ -153,11 +155,15 @@ def get_bottle_plan():
                 """
                 SELECT red, green, blue, dark
                 FROM potions
-                ORDER BY (CASE WHEN (red>0)::int + (green>0)::int + (blue>0)::int + (dark>0)::int > 1 THEN 0 ELSE 1 END)
+                ORDER BY (CASE WHEN ((red>0)::int + (green>0)::int + (blue>0)::int + (dark>0)::int) > 1 
+                THEN 0 
+                ELSE 1 
+                END)
                 """
             )
         ).fetchall()
 
+    # In ledgers, might be 0
     plan = []
     red_ml = inventory.red_ml or 0
     green_ml = inventory.green_ml or 0
@@ -174,7 +180,7 @@ def get_bottle_plan():
         )
         quantity = int(quantity)
 
-        # Cap quantity so the total plan doesn't exceed 50
+        # Cap quantity so the total plan doesn't exceed 50 (constraint)
         remainder = 50 - sum(x.quantity for x in plan)
         if remainder <= 0:
             break

@@ -96,7 +96,7 @@ def post_deliver_barrels(barrels_delivered: List[Barrel], order_id: int):
             }
         ).one_or_none()
 
-        # I think don't try to return an error or else I will get null barrels, don't want that
+        # I think don't try to return an AUDIT error or else I will get null barrels, don't want that
         if existing: return
 
         # Insert into transaction

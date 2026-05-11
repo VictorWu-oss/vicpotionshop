@@ -99,8 +99,8 @@ def create_cart(new_cart: Customer):
         result = connection.execute(
             sqlalchemy.text(
                 """
-                INSERT INTO carts (customer_id, customer_name, customer_class)
-                VALUES (:customer_id, :customer_name, :customer_class)
+                INSERT INTO carts (customer_id, customer_name, customer_class, customer_species, level)
+                VALUES (:customer_id, :customer_name, :customer_class, :customer_species, :level)
                 RETURNING id
                 """
             ),
@@ -108,6 +108,8 @@ def create_cart(new_cart: Customer):
                 "customer_id" : new_cart.customer_id,
                 "customer_name" : new_cart.customer_name,
                 "customer_class" : new_cart.character_class,
+                "customer_species": new_cart.character_species,
+                "level" : new_cart.level,
             }
         )
         cart_id = result.scalar_one()
@@ -125,7 +127,6 @@ class CartItem(BaseModel):
 @router.post("/{cart_id}/items/{item_sku}", status_code=status.HTTP_204_NO_CONTENT)
 def set_item_quantity(cart_id: int, item_sku: str, cart_item: CartItem):
     with db.engine.begin() as connection:
-        # Check if cart exists
         cart = connection.execute(
             sqlalchemy.text(
                 """
@@ -139,6 +140,7 @@ def set_item_quantity(cart_id: int, item_sku: str, cart_item: CartItem):
             }
         ).one_or_none()
 
+        # Check if cart exists
         if cart is None:
             raise HTTPException(status_code=404, detail="Cart not found")
 
@@ -230,17 +232,17 @@ def checkout(cart_id: int, cart_checkout: CartCheckout):
             raise HTTPException(status_code=404, detail="Cart not found")
 
         # Get all items in the cart with potion details
-        # Joins cart_items and potions so we get price and inventory too
+        # Joins cart_items and potions so I get price and inventory too
         items = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT potions.sku, potions.price, potions.id as potion_id, ci.quantity,
+                SELECT potions.sku, potions.price, potions.id as potion_id, cart_items.quantity,
                 COALESCE(SUM(ale.potion_change), 0) as inventory
-                FROM cart_items ci
-                JOIN potions ON ci.potion_id = potions.id
+                FROM cart_items 
+                JOIN potions ON cart_items.potion_id = potions.id
                 LEFT JOIN account_ledger_entries ale ON ale.potion_id = potions.id
-                WHERE ci.cart_id = :cart_id
-                GROUP BY potions.sku, potions.price, potions.id, ci.quantity
+                WHERE cart_items.cart_id = :cart_id
+                GROUP BY potions.sku, potions.price, potions.id, cart_items.quantity
                 """
             ),
             {
@@ -259,14 +261,14 @@ def checkout(cart_id: int, cart_checkout: CartCheckout):
                 """
             ),
             {
-                "description": "Cart: Potions sold"
+                "description": f"Cart Id:{cart_id}, Potions sold"
             }
         ).scalar_one()
 
         total_potions_bought = 0
         total_gold_added = 0
 
-        # Check global inventory that counts from ledger for the total number of potions in inventory
+        # Check global inventory that counts from ledger for the total number of potions in inventory, SUM(potion_change)
         for item in items:
             # Check if enough in stock to be sold
             if item.inventory < item.quantity:

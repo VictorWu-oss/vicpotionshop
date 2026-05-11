@@ -27,7 +27,7 @@ def get_catalog() -> List[CatalogItem]:
     """
     with db.engine.begin() as connection:
         potions = connection.execute(
-            # LEFT join with ledger, connects potion to ledger entries
+            # LEFT join with ledger, connects potion to ledger entries, makes sure the NULL iDs are still there
             # SUM potion_change to get curr inventory.
             # GROUP BY sorts the final output
             # HAVING used over WHERE bc there's aggregate functions. It also works only as a post-aggregate-op clause.
