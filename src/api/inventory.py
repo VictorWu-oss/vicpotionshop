@@ -65,7 +65,44 @@ def get_capacity_plan():
     - Start with 1 capacity for 50 potions and 1 capacity for 10,000 ml of potion.
     - Each additional capacity unit costs 1000 gold.
     """
-    return CapacityPlan(potion_capacity=0, ml_capacity=0)
+    with db.engine.begin() as connection:
+        # Read curr capacity from global inventory
+        capacity = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT 10000 + COALESCE(SUM(ml_capacity), 0) as ml_capacity, 50 + COALESCE(SUM(potion_capacity), 0) as potion_capacity
+                FROM account_ledger_entries
+                """
+            )
+        ).one()
+
+        # Read curr gold, ml, potions from ledger
+        account_ledger = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT SUM(gold) as gold, SUM(red_ml) + SUM(green_ml) + SUM(blue_ml) as total_ml, SUM(potion_change) as total_potions
+                FROM account_ledger_entries
+                """
+            )
+        ).one()
+
+    gold = account_ledger.gold or 0
+    total_ml = account_ledger.total_ml or 0
+    total_potions = account_ledger.total_potions or 0
+
+    potion_cap_tobuy = 0
+    ml_cap_tobuy = 0
+
+    # Buy ml capacity if halfway full and can afford it
+    if total_ml >= capacity.ml_capacity * 0.5 and gold >= 1000:
+        ml_cap_tobuy = 1
+        gold -= 1000
+
+    # Buy potion capacity if halfway full and can afford it
+    if total_potions >= capacity.potion_capacity * 0.5 and gold >= 1000:
+        potion_cap_tobuy = 1
+
+    return CapacityPlan(potion_capacity=potion_cap_tobuy, ml_capacity=ml_cap_tobuy)
 
 
 @router.post("/deliver/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -77,4 +114,74 @@ def deliver_capacity_plan(capacity_purchase: CapacityPlan, order_id: int):
     - Start with 1 capacity for 50 potions and 1 capacity for 10,000 ml of potion.
     - Each additional capacity unit costs 1000 gold.
     """
-    print(f"capacity delivered: {capacity_purchase} order_id: {order_id}")
+    with db.engine.begin() as connection:
+        # Receives capacity_purchase a CapacityPlan and order_id
+
+        # Check in processed requests to see if order_id already exists, if it does don't do it: uniqueness constraint violation
+        existing = connection.execute(
+            sqlalchemy.text
+                (
+                """
+                SELECT order_id 
+                FROM processed_requests 
+                WHERE order_id = :order_id
+                """
+            ),
+            {
+                "order_id": order_id
+            }
+        ).one_or_none()
+
+        # Don't try to return an error or else I will get null, don't want that
+        if existing: return
+
+        # Insert into account_transactions
+        transaction = connection.execute(
+            sqlalchemy.text
+                (
+                """
+                INSERT INTO account_transactions (description)
+                VALUES(:description)
+                RETURNING id 
+                """
+            ),
+            {
+                "description": "Increased capacity"
+            }
+        ).scalar_one()
+
+        gold_cost = (capacity_purchase.potion_capacity + capacity_purchase.ml_capacity) * 1000
+
+        # Insert into ledgers with neg gold
+        connection.execute(
+            sqlalchemy.text
+                (
+                """
+                INSERT INTO account_ledger_entries (account_transaction_id, gold, ml_capacity, potion_capacity)
+                VALUES(:transaction_id, :gold, :ml_capacity, :potion_capacity)
+                """
+            ),
+            {
+                "transaction_id": transaction,
+                "gold": -gold_cost,
+                "ml_capacity": capacity_purchase.ml_capacity * 10000,
+                "potion_capacity": capacity_purchase.potion_capacity * 50
+            }
+        )
+
+        # Insert into processed requests
+        connection.execute(
+            sqlalchemy.text
+                (
+                """
+                INSERT INTO processed_requests (order_id, response)
+                VALUES(:order_id, :response)
+                """
+            ),
+            {
+                "order_id": order_id,
+                "response": "processed"
+            }
+        )
+
+        print(f"capacity delivered: {capacity_purchase} order_id: {order_id}")

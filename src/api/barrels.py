@@ -156,15 +156,15 @@ def create_barrel_plan(
 ) -> List[BarrelOrder]:
 
     # Plan:
-    # If I already have 15 potions, don't buy more barrels
+    # Scratch this: If I already have 15 potions, don't buy more barrels
     # Per barrel:
     #   If my total_ml would exceed 10000 by purchasing another barrel dont buy, if not continue
     #   Audit says: Cannot have more than 10000 ml in inventory. With current barrel request would have 17500 ml.
     #
     #   If I can afford it, then do so
 
-    if total_potions >= 15:
-        return []
+    #if total_potions >= 15:
+    #    return []
 
     plan = []
     for barrel in wholesale_catalog:
@@ -175,9 +175,7 @@ def create_barrel_plan(
             plan.append(BarrelOrder(sku=barrel.sku, quantity=1))
             gold -= barrel.price
             total_ml += barrel.ml_per_barrel
-
     return plan
-
 
 # Reads gold, but also needs to read potion color ml and potion color
 @router.post("/plan", response_model=List[BarrelOrder])
@@ -187,8 +185,6 @@ def get_wholesale_purchase_plan(wholesale_catalog: List[Barrel]):
     and the shop returns back which barrels they'd like to purchase and how many.
     """
     print(f"barrel catalog: {wholesale_catalog}")
-
-
     with db.engine.begin() as connection:
         # REFER TO THE ACCOUNTS LEDGER FOR INFORMATION
         ledger = connection.execute(
