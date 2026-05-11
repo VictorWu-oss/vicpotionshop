@@ -150,8 +150,8 @@ def post_deliver_barrels(barrels_delivered: List[Barrel], order_id: int):
 
 def create_barrel_plan(
     gold: int,
-    total_potions: int,
     total_ml: int,
+    ml_capacity: int,
     wholesale_catalog: List[Barrel],
 ) -> List[BarrelOrder]:
 
@@ -168,7 +168,7 @@ def create_barrel_plan(
 
     plan = []
     for barrel in wholesale_catalog:
-        if total_ml + barrel.ml_per_barrel > 10000:
+        if total_ml + barrel.ml_per_barrel > ml_capacity:
             continue
         # If barrel's price is less than the gold
         if barrel.price <= gold:
@@ -196,6 +196,16 @@ def get_wholesale_purchase_plan(wholesale_catalog: List[Barrel]):
             )
         ).one()
 
+        # Get ml capacity from ledger
+        ml_capacity = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT 10000 + COALESCE(SUM(ml_capacity), 0) as ml_capacity
+                FROM account_ledger_entries
+                """
+            )
+        ).scalar_one()
+
         # Get total potion inventory via potions table
         # Fill in values correctly based on what is in your database
         total_potions = connection.execute(
@@ -207,5 +217,6 @@ def get_wholesale_purchase_plan(wholesale_catalog: List[Barrel]):
         gold=ledger.gold or 0,
         total_potions=total_potions.total or 0,
         total_ml = (ledger.red_ml or 0) + (ledger.green_ml or 0) + (ledger.blue_ml or 0) + (ledger.dark_ml or 0),
+        ml_capacity=ml_capacity,
         wholesale_catalog=wholesale_catalog,
     )
