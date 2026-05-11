@@ -25,9 +25,10 @@ def upgrade() -> None:
     op.add_column("carts", sa.Column("level", sa.Integer(), nullable=True))
 
     # Update potion_inventory view to include ml amounts
+    op.execute("DROP VIEW IF EXISTS potion_inventory")
     op.execute(
         """
-        CREATE OR REPLACE VIEW potion_inventory AS
+        CREATE VIEW potion_inventory AS
         SELECT 
             p.id,
             p.sku,
