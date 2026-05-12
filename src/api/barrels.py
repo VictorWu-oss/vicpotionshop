@@ -169,6 +169,9 @@ def create_barrel_plan(
 
     plan = []
     for barrel in wholesale_catalog:
+        # Skip Junk Barrels
+        if barrel.sku == "JUNK_BARREL":
+            continue
         if total_ml + barrel.ml_per_barrel > ml_capacity:
             continue
         # If barrel's price is less than the gold
