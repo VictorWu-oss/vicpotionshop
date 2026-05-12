@@ -165,6 +165,7 @@ def create_barrel_plan(
 
     #if total_potions >= 15:
     #    return []
+    print(f"create_barrel_plan: gold={gold}, total_ml={total_ml}, ml_capacity={ml_capacity}")
 
     plan = []
     for barrel in wholesale_catalog:
