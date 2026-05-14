@@ -99,8 +99,8 @@ def create_cart(new_cart: Customer):
         result = connection.execute(
             sqlalchemy.text(
                 """
-                INSERT INTO carts (customer_id, customer_name, customer_class, customer_species, level)
-                VALUES (:customer_id, :customer_name, :customer_class, :customer_species, :level)
+                INSERT INTO carts (customer_id, customer_name, customer_class, character_species, level)
+                VALUES (:customer_id, :customer_name, :customer_class, :character_species, :level)
                 RETURNING id
                 """
             ),
@@ -108,7 +108,7 @@ def create_cart(new_cart: Customer):
                 "customer_id" : new_cart.customer_id,
                 "customer_name" : new_cart.customer_name,
                 "customer_class" : new_cart.character_class,
-                "customer_species": new_cart.character_species,
+                "character_species": new_cart.character_species,
                 "level" : new_cart.level,
             }
         )
