@@ -167,8 +167,21 @@ def create_barrel_plan(
     #    return []
     print(f"create_barrel_plan: gold={gold}, total_ml={total_ml}, ml_capacity={ml_capacity}")
 
+    # Priority order: large red first, then medium red, then small red, then everything else
+    def barrel_priority(barrel: Barrel) -> int:
+        if barrel.sku == "LARGE_RED_BARREL":
+            return 0
+        elif barrel.sku == "MEDIUM_RED_BARREL":
+            return 1
+        elif barrel.sku == "SMALL_RED_BARREL":
+            return 2
+        else:
+            return 3
+
+    sorted_catalog = sorted(wholesale_catalog, key=barrel_priority)
+
     plan = []
-    for barrel in wholesale_catalog:
+    for barrel in sorted_catalog:
         # Skip Junk Barrels
         if barrel.sku == "JUNK_BARREL":
             continue
