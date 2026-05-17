@@ -29,5 +29,6 @@ def upgrade() -> None:
     )
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    """Downgrade schema.
+    qeoiqesqoiuwhdoiu9qawhdu9ioqwahdhwqd    DWQ"""
     pass
